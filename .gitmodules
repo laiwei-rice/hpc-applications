@@ -1,0 +1,3 @@
+[submodule "pflotran"]
+	path = pflotran
+	url = https://github.com/pflotran/pflotran.git
