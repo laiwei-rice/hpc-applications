@@ -4,9 +4,10 @@ clear
 
 cur_dir=`echo $PWD`
 
-(cd ../src/pflotran; make pflotran;)
+#(cd ../src/pflotran; make pflotran;)
 
-for fname in `find ./ -name '*.in' | grep -v obsolete | grep -v scaling | cut -c 4- `
+#for fname in `find ./ -name '*.in' | grep -v obsolete | grep -v scaling | cut -c 4- `
+for fname in `find ./ -name '*.in' | grep -v obsolete | grep -v scaling | cut -c 3- `
 do
 
   fname2=`echo $fname| awk -F '.' '{print $1}'`
@@ -14,14 +15,16 @@ do
   cp $fname ${fname2}_test.in
 
   final_time=`cat ${fname2}_test.in | grep "FINAL_TIME" | grep -v \#`
-  sed -i .bk "s/${final_time}/FINAL_TIME 1.d0 s/g" ${fname2}_test.in
+  #sed -i .bk "s/${final_time}/FINAL_TIME 1.d0 s/g" ${fname2}_test.in
+  sed -i "s/${final_time}/FINAL_TIME 1.d0 s/g" ${fname2}_test.in
 
   dir_path="${fname%/*}"
 
   echo "==========================================================="
   echo "Inputfile  : " $fname
 
-  (cd $dir_path; $cur_dir/../src/pflotran/pflotran -pflotranin ${cur_dir}/${fname2}_test.in > logfile);
+  #(cd $dir_path; $cur_dir/../src/pflotran/pflotran -pflotranin ${cur_dir}/${fname2}_test.in > logfile);
+  (cd $dir_path; aprun -n 16 -N 16 -cc depth -d 1 -j 1 pflotran -pflotranin ${cur_dir}/${fname2}_test.in > logfile);
   exit_status=$?
 
   echo "Exit status: " $exit_status
@@ -32,8 +35,8 @@ do
     tail -5 $dir_path/logfile
   fi
 
-  rm -f $dir_path/logfile
-  rm -rf ${fname2}_test.in ${fname2}_test.in.bk
+  #rm -f $dir_path/logfile
+  rm -rf ${fname2}_test.in
 done
 
 # Do cleanup
@@ -47,7 +50,7 @@ do
   rm -rf $fname
 done
 
-for fname in `find ./ -name '*test.tec' `
+for fname in `find ./ -name '*test*.tec' `
 do
   rm -rf $fname
 done
