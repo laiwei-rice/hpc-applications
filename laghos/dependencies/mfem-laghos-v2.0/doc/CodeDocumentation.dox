@@ -1,0 +1,133 @@
+namespace mfem {
+
+/*! \mainpage Code Documentation
+ *
+ * <H3>Main mesh classes</H3>
+ *
+ * - Mesh
+ * - NCMesh
+ * - Element
+ * - ElementTransformation
+ *
+ * <H3>Main finite element classes</H3>
+ *
+ * - FiniteElement
+ * - FiniteElementCollection
+ * - FiniteElementSpace
+ * - GridFunction
+ * - BilinearFormIntegrator and LinearFormIntegrator
+ * - LinearForm, BilinearForm and MixedBilinearForm
+ *
+ * <H3>Main linear algebra classes and sources</H3>
+ *
+ * - Operator and BilinearForm
+ * - Vector and LinearForm
+ * - DenseMatrix and SparseMatrix
+ * - Sparse \link sparsesmoothers.hpp smoothers\endlink and linear
+ *   \link solvers.hpp solvers\endlink
+ *
+ * <H3>Main parallel classes</H3>
+ * - ParMesh
+ * - ParNCMesh
+ * - ParFiniteElementSpace
+ * - ParGridFunction
+ * - ParBilinearForm and ParLinearForm
+ * - HypreParMatrix and HypreParVector
+ * - HypreSolver and other \link hypre.hpp hypre classes\endlink
+ *
+ * <H3>Example codes</H3>
+ * - <a class="el" href="examples_2ex1_8cpp_source.html">Example 1</a>: nodal H1 FEM for the Laplace problem
+ * - <a class="el" href="examples_2ex1p_8cpp_source.html">Example 1p</a>: parallel nodal H1 FEM for the Laplace problem
+ * - <a class="el" href="ex2_8cpp_source.html">Example 2</a>: vector FEM for linear elasticity
+ * - <a class="el" href="ex2p_8cpp_source.html">Example 2p</a>: parallel vector FEM for linear elasticity
+ * - <a class="el" href="ex3_8cpp_source.html">Example 3</a>: Nedelec H(curl) FEM for the definite Maxwell problem
+ * - <a class="el" href="ex3p_8cpp_source.html">Example 3p</a>: parallel Nedelec H(curl) FEM for the definite Maxwell problem
+ * - <a class="el" href="ex4_8cpp_source.html">Example 4</a>: Raviart-Thomas H(div) FEM for the grad-div problem
+ * - <a class="el" href="ex4p_8cpp_source.html">Example 4p</a>: parallel Raviart-Thomas H(div) FEM for the grad-div problem
+ * - <a class="el" href="ex5_8cpp_source.html">Example 5</a>: mixed pressure-velocity FEM for the Darcy problem
+ * - <a class="el" href="ex5p_8cpp_source.html">Example 5p</a>: parallel mixed pressure-velocity FEM for the Darcy problem
+ * - <a class="el" href="ex6_8cpp_source.html">Example 6</a>: non-conforming adaptive mesh refinement for the Laplace problem
+ * - <a class="el" href="ex6p_8cpp_source.html">Example 6p</a>: parallel non-conforming adaptive mesh refinement for the Laplace problem
+ * - <a class="el" href="ex7_8cpp_source.html">Example 7</a>: Laplace problem on a surface (the unit sphere)
+ * - <a class="el" href="ex7p_8cpp_source.html">Example 7p</a>: parallel Laplace problem on a surface (the unit sphere)
+ * - <a class="el" href="ex8_8cpp_source.html">Example 8</a>: Discontinuous Petrov-Galerkin (DPG) for the Laplace problem
+ * - <a class="el" href="ex8p_8cpp_source.html">Example 8p</a>: parallel Discontinuous Petrov-Galerkin (DPG) for the Laplace problem
+ * - <a class="el" href="ex9_8cpp_source.html">Example 9</a>: Discontinuous Galerkin (DG) time-dependent advection
+ * - <a class="el" href="ex9p_8cpp_source.html">Example 9p</a>: parallel Discontinuous Galerkin (DG) time-dependent advection
+ * - <a class="el" href="ex10_8cpp_source.html">Example 10</a>: time-dependent implicit nonlinear elasticity
+ * - <a class="el" href="ex10p_8cpp_source.html">Example 10p</a>: parallel time-dependent implicit nonlinear elasticity
+ * - <a class="el" href="examples_2ex11p_8cpp_source.html">Example 11p</a>: parallel Laplace eigensolver
+ * - <a class="el" href="ex12p_8cpp_source.html">Example 12p</a>: parallel linear elasticity eigensolver
+ * - <a class="el" href="ex13p_8cpp_source.html">Example 13p</a>: parallel Maxwell eigensolver
+ * - <a class="el" href="ex14_8cpp_source.html">Example 14</a>: Discontinuous Galerkin (DG) for the Laplace problem
+ * - <a class="el" href="ex14p_8cpp_source.html">Example 14p</a>: parallel Discontinuous Galerkin (DG) for the Laplace problem
+ * - <a class="el" href="ex15_8cpp_source.html">Example 15</a>: dynamic AMR for Laplace with prescribed time-dependent source
+ * - <a class="el" href="ex15p_8cpp_source.html">Example 15p</a>: parallel dynamic AMR for Laplace with prescribed time-dependent source
+ * - <a class="el" href="ex16_8cpp_source.html">Example 16</a>: time-dependent nonlinear heat equation
+ * - <a class="el" href="ex16p_8cpp_source.html">Example 16p</a>: parallel time-dependent nonlinear heat equation
+ * - <a class="el" href="ex17_8cpp_source.html">Example 17</a>: Discontinuous Galerkin (DG) for linear elasticity
+ * - <a class="el" href="ex17p_8cpp_source.html">Example 17p</a>: parallel Discontinuous Galerkin (DG) for linear elasticity
+ * - <a class="el" href="ex18_8cpp_source.html">Example 18</a>: Discontinuous Galerkin (DG) for the Euler equations
+ * - <a class="el" href="ex18p_8cpp_source.html">Example 18p</a>: parallel Discontinuous Galerkin (DG) for the Euler equations
+ * - <a class="el" href="ex19_8cpp_source.html">Example 19</a>: incompressible nonlinear elasticity
+ * - <a class="el" href="ex19p_8cpp_source.html">Example 19p</a>: parallel incompressible nonlinear elasticity
+ * - <a class="el" href="ex20_8cpp_source.html">Example 20</a>: symplectic ODE integration
+ * - <a class="el" href="ex20p_8cpp_source.html">Example 20p</a>: parallel symplectic ODE integration
+ * - <a class="el" href="ex22_8cpp_source.html">Example 22</a>: adaptive mesh refinement for linear elasticity
+ * - <a class="el" href="ex22p_8cpp_source.html">Example 22p</a>: parallel adaptive mesh refinement for linear elasticity
+ *
+ * <H4>SUNDIALS Examples</H4>
+ * - Variants of Examples
+ *   <a class="el" href="sundials_2ex9_8cpp_source.html">9</a>,
+ *   <a class="el" href="sundials_2ex9p_8cpp_source.html">9p</a>,
+ *   <a class="el" href="sundials_2ex10_8cpp_source.html">10</a>,
+ *   <a class="el" href="sundials_2ex10p_8cpp_source.html">10p</a>,
+ *   <a class="el" href="sundials_2ex16_8cpp_source.html">16</a>,
+ *   and
+ *   <a class="el" href="sundials_2ex16p_8cpp_source.html">16p</a>
+ *   demonstrating the use of MFEM's \link sundials.hpp SUNDIALS classes\endlink
+ *
+ * <H4>PETSc Examples</H4>
+ * - Variants of Examples
+ *   <a class="el" href="examples_2petsc_2ex1p_8cpp_source.html">1p</a>,
+ *   <a class="el" href="petsc_2ex2p_8cpp_source.html">2p</a>,
+ *   <a class="el" href="petsc_2ex3p_8cpp_source.html">3p</a>,
+ *   <a class="el" href="petsc_2ex4p_8cpp_source.html">4p</a>,
+ *   <a class="el" href="petsc_2ex5p_8cpp_source.html">5p</a>,
+ *   <a class="el" href="petsc_2ex6p_8cpp_source.html">6p</a>,
+ *   <a class="el" href="petsc_2ex9p_8cpp_source.html">9p</a>,
+ *   and
+ *   <a class="el" href="petsc_2ex10p_8cpp_source.html">10p</a>
+ *   demonstrating the use of MFEM's \link petsc.hpp PETSc classes\endlink
+ *
+ * <H4>PUMI Examples</H4>
+ * - Variants of Examples
+ *   <a class="el" href="examples_2pumi_2ex1_8cpp_source.html">1</a>,
+ *   <a class="el" href="examples_2pumi_2ex1p_8cpp_source.html">1p</a>,
+ *   <a class="el" href="pumi_2ex2_8cpp_source.html">2</a>,
+ *   and
+ *   <a class="el" href="pumi_2ex6p_8cpp_source.html">6p</a>
+ *   demonstrating the use of MFEM's \link pumi.hpp PUMI classes\endlink
+ *
+ * <H3>Miniapps</H3>
+ * - <a class="el" href="volta_8cpp_source.html">Volta</a>: simple electrostatics simulation code
+ * - <a class="el" href="tesla_8cpp_source.html">Tesla</a>: simple magnetostatics simulation code
+ * - <a class="el" href="maxwell_8cpp_source.html">Maxwell</a>: simple transient full-wave electromagnetics simulation code
+ * - <a class="el" href="joule_8cpp_source.html">Joule</a>: transient magnetics and Joule heating miniapp
+ * - <a class="el" href="mobius-strip_8cpp_source.html">Mobius Strip</a>: generate various Mobius strip-like meshes
+ * - <a class="el" href="klein-bottle_8cpp_source.html">Klein Bottle</a>: generate three types of Klein bottle surfaces
+ * - <a class="el" href="toroid_8cpp_source.html">Toroid</a>: generate simple toroidal meshes
+ * - <a class="el" href="shaper_8cpp_source.html">Shaper</a>: resolve material interfaces by mesh refinement
+ * - <a class="el" href="extruder_8cpp_source.html">Extruder</a>: extrude a low-dimensional mesh into a higher dimension
+ * - <a class="el" href="mesh-explorer_8cpp_source.html">Mesh Explorer</a>: visualize and manipulate meshes
+ * - <a class="el" href="mesh-optimizer_8cpp_source.html">Mesh Optimizer</a>: optimize high-order meshes, <a class="el" href="mesh-optimizer_8cpp_source.html">serial</a> and <a class="el" href="pmesh-optimizer_8cpp_source.html">parallel</a> versions
+ * - <a class="el" href="display-basis_8cpp_source.html">Display Basis</a>: visualize finite element basis functions
+ * - <a class="el" href="load-dc_8cpp_source.html">Load DC</a>: visualize fields saved via DataCollection classes
+ * - <a class="el" href="convert-dc_8cpp_source.html">Convert DC</a>: convert between diffirent DataCollection formats
+ * - <a class="el" href="miniapps_2performance_2ex1_8cpp_source.html">HPC Example 1</a>: high-performance nodal H1 FEM for the Laplace problem
+ * - <a class="el" href="miniapps_2performance_2ex1p_8cpp_source.html">HPC Example 1p</a>: high-performance parallel nodal H1 FEM for the Laplace problem
+ *
+ * See also the <a class="el" href="../../../examples/README.html">README</a> in the <code>examples/</code> directory
+ */
+
+}
