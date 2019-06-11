@@ -248,12 +248,9 @@ subroutine OutputTecplotBlock(realization_base)
   Vec :: global_vec
   Vec :: natural_vec
   PetscInt :: ivar, isubvar, var_type
+  PetscBool :: include_gas_phase
   PetscErrorCode :: ierr
- 
-  character(len=MAXSTRINGLENGTH) :: mpi_output_filename
-  integer mpi_err, mpi_output_file 
-  integer(kind=MPI_OFFSET_KIND) mpi_output_offset
- 
+  
   discretization => realization_base%discretization
   patch => realization_base%patch
   grid => patch%grid
@@ -262,20 +259,14 @@ subroutine OutputTecplotBlock(realization_base)
   output_option => realization_base%output_option
   
   filename = OutputFilename(output_option,option,'tec','')
-
-  mpi_output_filename = trim(filename) // 'mpi'  
-  call MPI_File_open(MPI_COMM_WORLD, mpi_output_filename, &
-                   MPI_MODE_WRONLY + MPI_MODE_CREATE, &
-                   MPI_INFO_NULL, mpi_output_file, mpi_err) 
-  mpi_output_offset = 0
- 
+  
   if (option%myrank == option%io_rank) then
     option%io_buffer = '--> write tecplot output file: ' // trim(filename)
     call printMsg(option)
     open(unit=OUTPUT_UNIT,file=filename,action="write")
     call OutputTecplotHeader(OUTPUT_UNIT,realization_base,icolumn)
   endif
-  
+    
   ! write blocks
   ! write out data sets  
   call DiscretizationCreateVector(discretization,ONEDOF,global_vec,GLOBAL, &
@@ -285,8 +276,7 @@ subroutine OutputTecplotBlock(realization_base)
 
   ! write out coordinates
   if (realization_base%discretization%itype == STRUCTURED_GRID) then
-    !call WriteTecplotStructuredGrid(OUTPUT_UNIT,realization_base)
-    call WriteTecplotStructuredGridMPI(mpi_output_file, mpi_output_offset,realization_base)
+    call WriteTecplotStructuredGrid(OUTPUT_UNIT,realization_base)
   else
     call WriteTecplotUGridVertices(OUTPUT_UNIT,realization_base)
   endif
@@ -299,13 +289,11 @@ subroutine OutputTecplotBlock(realization_base)
     call DiscretizationGlobalToNatural(discretization,global_vec, &
                                         natural_vec,ONEDOF)
     if (cur_variable%iformat == 0) then
-      ! call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base,natural_vec, &
-      call WriteTecplotDataSetFromVecMPI(mpi_output_file, mpi_output_offset, &
-                            realization_base,natural_vec,TECPLOT_REAL)
+      call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base, &
+                                      natural_vec,TECPLOT_REAL)
     else
-      ! call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base,natural_vec, &
-      call WriteTecplotDataSetFromVecMPI(mpi_output_file, mpi_output_offset, &
-                            realization_base,natural_vec,TECPLOT_INTEGER)
+      call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base, &
+                                      natural_vec,TECPLOT_INTEGER)
     endif
     cur_variable => cur_variable%next
   enddo
@@ -324,45 +312,51 @@ subroutine OutputTecplotBlock(realization_base)
     call WriteTecplotExpGridElements(OUTPUT_UNIT,realization_base)
   endif
 
-  if (realization_base%discretization%grid%itype == POLYHEDRA_UNSTRUCTURED_GRID) then
+  if (realization_base%discretization%grid%itype == &
+      POLYHEDRA_UNSTRUCTURED_GRID) then
     call WriteTecplotPolyUGridElements(OUTPUT_UNIT,realization_base)
   endif
 
   if (option%myrank == option%io_rank) close(OUTPUT_UNIT)
-  call MPI_FILE_CLOSE(mpi_output_file, ierr)  
   
   if (output_option%print_tecplot_vel_cent) then
     call OutputVelocitiesTecplotBlock(realization_base)
   endif
   
+  include_gas_phase = PETSC_FALSE
   if (output_option%print_tecplot_vel_face .and. &
       realization_base%discretization%itype == STRUCTURED_GRID) then
+    select case(option%iflowmode)
+      case(MPH_MODE,IMS_MODE,FLASH2_MODE,G_MODE,WF_MODE)
+        call OutputFluxVelocitiesTecplotBlk(realization_base,GAS_PHASE, &
+                                            X_DIRECTION,PETSC_FALSE)
+        include_gas_phase = PETSC_TRUE
+      case(NULL_MODE)
+        if (option%transport%nphase > 1) include_gas_phase = PETSC_TRUE
+    end select
     if (grid%structured_grid%nx > 1) then
       call OutputFluxVelocitiesTecplotBlk(realization_base,LIQUID_PHASE, &
                                           X_DIRECTION,PETSC_FALSE)
-      select case(option%iflowmode)
-        case(MPH_MODE,IMS_MODE,FLASH2_MODE,G_MODE,WF_MODE)
-          call OutputFluxVelocitiesTecplotBlk(realization_base,GAS_PHASE, &
-                                              X_DIRECTION,PETSC_FALSE)
-      end select
+      if (include_gas_phase) then
+        call OutputFluxVelocitiesTecplotBlk(realization_base,GAS_PHASE, &
+                                            X_DIRECTION,PETSC_FALSE)
+      endif
     endif
     if (grid%structured_grid%ny > 1) then
       call OutputFluxVelocitiesTecplotBlk(realization_base,LIQUID_PHASE, &
                                           Y_DIRECTION,PETSC_FALSE)
-      select case(option%iflowmode)
-        case(MPH_MODE, IMS_MODE,FLASH2_MODE,G_MODE,WF_MODE)
-          call OutputFluxVelocitiesTecplotBlk(realization_base,GAS_PHASE, &
-                                              Y_DIRECTION,PETSC_FALSE)
-      end select
+      if (include_gas_phase) then
+        call OutputFluxVelocitiesTecplotBlk(realization_base,GAS_PHASE, &
+                                            Y_DIRECTION,PETSC_FALSE)
+      endif
     endif
     if (grid%structured_grid%nz > 1) then
       call OutputFluxVelocitiesTecplotBlk(realization_base,LIQUID_PHASE, &
                                           Z_DIRECTION,PETSC_FALSE)
-      select case(option%iflowmode)
-        case(MPH_MODE, IMS_MODE,FLASH2_MODE,G_MODE,WF_MODE)
-          call OutputFluxVelocitiesTecplotBlk(realization_base,GAS_PHASE, &
-                                              Z_DIRECTION,PETSC_FALSE)
-      end select
+      if (include_gas_phase) then
+        call OutputFluxVelocitiesTecplotBlk(realization_base,GAS_PHASE, &
+                                            Z_DIRECTION,PETSC_FALSE)
+      endif
     endif
   endif
   if (output_option%print_fluxes .and. &
@@ -444,11 +438,7 @@ subroutine OutputVelocitiesTecplotBlock(realization_base)
   PetscErrorCode :: ierr
 
   PetscReal, pointer :: vec_ptr(:)
-   
-  character(len=MAXSTRINGLENGTH) :: mpi_output_filename
-  integer mpi_err, mpi_output_file 
-  integer(kind=MPI_OFFSET_KIND) mpi_output_offset
-
+  
   patch => realization_base%patch
   grid => patch%grid
   field => realization_base%field
@@ -456,14 +446,8 @@ subroutine OutputVelocitiesTecplotBlock(realization_base)
   output_option => realization_base%output_option
   discretization => realization_base%discretization
 
-  filename = OutputFilename(output_option,option,'tec','vel') 
-
-  mpi_output_filename = trim(filename) // 'mpi'  
-  call MPI_File_open(MPI_COMM_WORLD, mpi_output_filename, &
-                   MPI_MODE_WRONLY + MPI_MODE_CREATE, &
-                   MPI_INFO_NULL, mpi_output_file, mpi_err) 
-  mpi_output_offset = 0
- 
+  filename = OutputFilename(output_option,option,'tec','vel')
+  
   if (option%myrank == option%io_rank) then
     option%io_buffer = '--> write tecplot velocity output file: ' // &
                        trim(filename)
@@ -475,6 +459,7 @@ subroutine OutputVelocitiesTecplotBlock(realization_base)
     write(OUTPUT_UNIT,'(''TITLE = "'',1es13.5," [",a1,'']"'')') &
                  option%time/output_option%tconv,output_option%tunit
     ! write variables
+    variable_count = SEVEN_INTEGER
     string = 'VARIABLES=' // &
              '"X [m]",' // &
              '"Y [m]",' // &
@@ -482,7 +467,8 @@ subroutine OutputVelocitiesTecplotBlock(realization_base)
              '"qlx [m/' // trim(output_option%tunit) // ']",' // &
              '"qly [m/' // trim(output_option%tunit) // ']",' // &
              '"qlz [m/' // trim(output_option%tunit) // ']"'
-    if (option%nphase > 1) then
+    if (option%nphase > 1 .or. option%transport%nphase > 1) then
+      variable_count = TEN_INTEGER
       string = trim(string) // &
                ',"qgx [m/' // trim(output_option%tunit) // ']",' // &
                '"qgy [m/' // trim(output_option%tunit) // ']",' // &
@@ -492,8 +478,6 @@ subroutine OutputVelocitiesTecplotBlock(realization_base)
     string = trim(string) // ',"Material_ID"'
     write(OUTPUT_UNIT,'(a)') trim(string)
   
-    variable_count = SEVEN_INTEGER
-    if (option%nphase > 1) variable_count = TEN_INTEGER
     call OutputWriteTecplotZoneHeader(OUTPUT_UNIT,realization_base, &
                                       variable_count,TECPLOT_BLOCK_FORMAT)
   endif
@@ -510,46 +494,57 @@ subroutine OutputVelocitiesTecplotBlock(realization_base)
 
   ! write out coorindates
   if (realization_base%discretization%itype == STRUCTURED_GRID)  then
-    !call WriteTecplotStructuredGrid(OUTPUT_UNIT,realization_base)
-    call WriteTecplotStructuredGridMPI(mpi_output_file,mpi_output_offset,realization_base)
+    call WriteTecplotStructuredGrid(OUTPUT_UNIT,realization_base)
   else
     call WriteTecplotUGridVertices(OUTPUT_UNIT,realization_base)
   endif
   
   call OutputGetCellCenteredVelocities(realization_base,global_vec_vx, &
-                                       global_vec_vy,global_vec_vz,LIQUID_PHASE)
+                                       global_vec_vy,global_vec_vz, &
+                                       LIQUID_PHASE)
 
-  call DiscretizationGlobalToNatural(discretization,global_vec_vx,natural_vec,ONEDOF)
-  !call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base,natural_vec,TECPLOT_REAL)
-  call WriteTecplotDataSetFromVecMPI(mpi_output_file,mpi_output_offset,realization_base,natural_vec,TECPLOT_REAL)
+  call DiscretizationGlobalToNatural(discretization,global_vec_vx, &
+                                     natural_vec,ONEDOF)
+  call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base, &
+                                  natural_vec,TECPLOT_REAL)
 
-  call DiscretizationGlobalToNatural(discretization,global_vec_vy,natural_vec,ONEDOF)
-  !call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base,natural_vec,TECPLOT_REAL)
-  call WriteTecplotDataSetFromVecMPI(mpi_output_file,mpi_output_offset,realization_base,natural_vec,TECPLOT_REAL)
+  call DiscretizationGlobalToNatural(discretization,global_vec_vy, &
+                                     natural_vec,ONEDOF)
+  call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base, &
+                                  natural_vec,TECPLOT_REAL)
 
-  call DiscretizationGlobalToNatural(discretization,global_vec_vz,natural_vec,ONEDOF)
-  !call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base,natural_vec,TECPLOT_REAL)
-  call WriteTecplotDataSetFromVecMPI(mpi_output_file,mpi_output_offset,realization_base,natural_vec,TECPLOT_REAL)
+  call DiscretizationGlobalToNatural(discretization,global_vec_vz, &
+                                     natural_vec,ONEDOF)
+  call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base, &
+                                  natural_vec,TECPLOT_REAL)
 
-  if (option%nphase > 1) then
+  if (option%nphase > 1 .or. option%transport%nphase > 1) then
     call OutputGetCellCenteredVelocities(realization_base,global_vec_vx, &
                                          global_vec_vy,global_vec_vz,GAS_PHASE)
 
-    call DiscretizationGlobalToNatural(discretization,global_vec_vx,natural_vec,ONEDOF)
-    call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base,natural_vec,TECPLOT_REAL)
+    call DiscretizationGlobalToNatural(discretization,global_vec_vx, &
+                                       natural_vec,ONEDOF)
+    call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base, &
+                                    natural_vec,TECPLOT_REAL)
 
-    call DiscretizationGlobalToNatural(discretization,global_vec_vy,natural_vec,ONEDOF)
-    call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base,natural_vec,TECPLOT_REAL)
+    call DiscretizationGlobalToNatural(discretization,global_vec_vy, &
+                                       natural_vec,ONEDOF)
+    call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base, &
+                                    natural_vec,TECPLOT_REAL)
 
-    call DiscretizationGlobalToNatural(discretization,global_vec_vz,natural_vec,ONEDOF)
-    call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base,natural_vec,TECPLOT_REAL)
+    call DiscretizationGlobalToNatural(discretization,global_vec_vz, &
+                                       natural_vec,ONEDOF)
+    call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base, &
+                                    natural_vec,TECPLOT_REAL)
   endif
 
   ! material id
-  call RealizationGetVariable(realization_base,global_vec,MATERIAL_ID,ZERO_INTEGER)
-  call DiscretizationGlobalToNatural(discretization,global_vec,natural_vec,ONEDOF)
-  !call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base,natural_vec,TECPLOT_INTEGER)
-  call WriteTecplotDataSetFromVecMPI(mpi_output_file,mpi_output_offset,realization_base,natural_vec,TECPLOT_INTEGER)
+  call RealizationGetVariable(realization_base,global_vec, &
+                              MATERIAL_ID,ZERO_INTEGER)
+  call DiscretizationGlobalToNatural(discretization,global_vec, &
+                                     natural_vec,ONEDOF)
+  call WriteTecplotDataSetFromVec(OUTPUT_UNIT,realization_base, &
+                                     natural_vec,TECPLOT_INTEGER)
   
   call VecDestroy(natural_vec,ierr);CHKERRQ(ierr)
   call VecDestroy(global_vec,ierr);CHKERRQ(ierr)
@@ -589,10 +584,13 @@ subroutine OutputFluxVelocitiesTecplotBlk(realization_base,iphase, &
   use Realization_Base_class, only : realization_base_type
   use Discretization_module
   use Grid_module
+  use Grid_Structured_module
   use Option_module
   use Field_module
   use Connection_module
+  use Coupler_module
   use Patch_module
+  use DM_Kludge_module
   
   implicit none
 
@@ -602,11 +600,13 @@ subroutine OutputFluxVelocitiesTecplotBlk(realization_base,iphase, &
   PetscBool :: output_flux
   
   type(grid_type), pointer :: grid
+  type(grid_structured_type), pointer :: structured_grid
   type(option_type), pointer :: option
   type(field_type), pointer :: field
   type(patch_type), pointer :: patch
   type(discretization_type), pointer :: discretization  
   type(output_option_type), pointer :: output_option
+  type(dm_ptr_type), pointer :: dm_ptr
   
   character(len=MAXSTRINGLENGTH) :: filename
   character(len=MAXSTRINGLENGTH) :: string
@@ -617,17 +617,14 @@ subroutine OutputFluxVelocitiesTecplotBlk(realization_base,iphase, &
   PetscInt :: i, j, k
   PetscInt :: local_id, ghosted_id
   PetscInt :: adjusted_size
-  PetscInt :: count, iconn, sum_connection
-  PetscReal, pointer :: vec_ptr(:)
+  PetscInt :: count
   PetscReal, pointer :: array(:)
   PetscInt, allocatable :: indices(:)
-  Vec :: global_vec, global_vec2
-  PetscReal :: sum, average, max, min , std_dev
-  PetscInt :: max_loc, min_loc
   PetscErrorCode :: ierr
 
   type(connection_set_list_type), pointer :: connection_set_list
   type(connection_set_type), pointer :: cur_connection_set
+  type(coupler_type), pointer :: boundary_condition
     
   nullify(array)
 
@@ -637,6 +634,7 @@ subroutine OutputFluxVelocitiesTecplotBlk(realization_base,iphase, &
   discretization => realization_base%discretization
   patch => realization_base%patch
   grid => patch%grid
+  structured_grid => grid%structured_grid
   option => realization_base%option
   field => realization_base%field
   output_option => realization_base%output_option
@@ -737,15 +735,18 @@ subroutine OutputFluxVelocitiesTecplotBlk(realization_base,iphase, &
       case(X_DIRECTION)
         write(string,'(''ZONE T= "'',1es13.5,''",'','' I='',i4,'', J='',i4, &
                      &'', K='',i4)') &
-                     option%time/output_option%tconv,grid%structured_grid%nx-1,grid%structured_grid%ny,grid%structured_grid%nz 
+                     option%time/output_option%tconv,structured_grid%nx-1, &
+                     structured_grid%ny,structured_grid%nz 
       case(Y_DIRECTION)
         write(string,'(''ZONE T= "'',1es13.5,''",'','' I='',i4,'', J='',i4, &
                      &'', K='',i4)') &
-                     option%time/output_option%tconv,grid%structured_grid%nx,grid%structured_grid%ny-1,grid%structured_grid%nz 
+                     option%time/output_option%tconv,structured_grid%nx, &
+                     structured_grid%ny-1,structured_grid%nz 
       case(Z_DIRECTION)
         write(string,'(''ZONE T= "'',1es13.5,''",'','' I='',i4,'', J='',i4, &
                      &'', K='',i4)') &
-                     option%time/output_option%tconv,grid%structured_grid%nx,grid%structured_grid%ny,grid%structured_grid%nz-1
+                     option%time/output_option%tconv,structured_grid%nx, &
+                     structured_grid%ny,structured_grid%nz-1
     end select 
     string = trim(string) // ', DATAPACKING=BLOCK'
     write(OUTPUT_UNIT,'(a)') trim(string)
@@ -758,33 +759,33 @@ subroutine OutputFluxVelocitiesTecplotBlk(realization_base,iphase, &
   local_size = grid%nlmax
   global_size = grid%nmax
 !GEH - Structured Grid Dependence - Begin
-  nx_local = grid%structured_grid%nlx
-  ny_local = grid%structured_grid%nly
-  nz_local = grid%structured_grid%nlz
-  nx_global = grid%structured_grid%nx
-  ny_global = grid%structured_grid%ny
-  nz_global = grid%structured_grid%nz
+  nx_local = structured_grid%nlx
+  ny_local = structured_grid%nly
+  nz_local = structured_grid%nlz
+  nx_global = structured_grid%nx
+  ny_global = structured_grid%ny
+  nz_global = structured_grid%nz
   select case(direction)
     case(X_DIRECTION)
-      global_size = grid%nmax-grid%structured_grid%ny*grid%structured_grid%nz
-      nx_global = grid%structured_grid%nx-1
-      if (grid%structured_grid%gxe-grid%structured_grid%lxe == 0) then
-        local_size = grid%nlmax-grid%structured_grid%nlyz
-        nx_local = grid%structured_grid%nlx-1
+      global_size = grid%nmax-structured_grid%ny*structured_grid%nz
+      nx_global = structured_grid%nx-1
+      if (structured_grid%gxe-structured_grid%lxe == 0) then
+        local_size = grid%nlmax-structured_grid%nlyz
+        nx_local = structured_grid%nlx-1
       endif
     case(Y_DIRECTION)
-      global_size = grid%nmax-grid%structured_grid%nx*grid%structured_grid%nz
-      ny_global = grid%structured_grid%ny-1
-      if (grid%structured_grid%gye-grid%structured_grid%lye == 0) then
-        local_size = grid%nlmax-grid%structured_grid%nlxz
-        ny_local = grid%structured_grid%nly-1
+      global_size = grid%nmax-structured_grid%nx*structured_grid%nz
+      ny_global = structured_grid%ny-1
+      if (structured_grid%gye-structured_grid%lye == 0) then
+        local_size = grid%nlmax-structured_grid%nlxz
+        ny_local = structured_grid%nly-1
       endif
     case(Z_DIRECTION)
-      global_size = grid%nmax-grid%structured_grid%nxy
-      nz_global = grid%structured_grid%nz-1
-      if (grid%structured_grid%gze-grid%structured_grid%lze == 0) then
-        local_size = grid%nlmax-grid%structured_grid%nlxy
-        nz_local = grid%structured_grid%nlz-1
+      global_size = grid%nmax-structured_grid%nxy
+      nz_global = structured_grid%nz-1
+      if (structured_grid%gze-structured_grid%lze == 0) then
+        local_size = grid%nlmax-structured_grid%nlxy
+        nz_local = structured_grid%nlz-1
       endif
   end select  
   allocate(indices(local_size))
@@ -795,9 +796,9 @@ subroutine OutputFluxVelocitiesTecplotBlk(realization_base,iphase, &
     do j=1,ny_local
       do i=1,nx_local
         count = count + 1
-        indices(count) = i+grid%structured_grid%lxs+ &
-                         (j-1+grid%structured_grid%lys)*nx_global+ &
-                         (k-1+grid%structured_grid%lzs)*nx_global*ny_global
+        indices(count) = i+structured_grid%lxs+ &
+                         (j-1+structured_grid%lys)*nx_global+ &
+                         (k-1+structured_grid%lzs)*nx_global*ny_global
       enddo
     enddo
   enddo
@@ -809,20 +810,21 @@ subroutine OutputFluxVelocitiesTecplotBlk(realization_base,iphase, &
     do j=1,ny_local
       do i=1,nx_local
         count = count + 1
-        local_id = i+(j-1)*grid%structured_grid%nlx+ &
-                   (k-1)*grid%structured_grid%nlxy
+        local_id = i+(j-1)*structured_grid%nlx+ &
+                   (k-1)*structured_grid%nlxy
         ghosted_id = grid%nL2G(local_id)
         array(count) = grid%x(ghosted_id)
         if (direction == X_DIRECTION) &
           array(count) = array(count) + &
-                         0.5d0*grid%structured_grid%dx(ghosted_id)
+                         0.5d0*structured_grid%dx(ghosted_id)
       enddo
     enddo
   enddo
   ! warning: adjusted size will be changed in OutputConvertArrayToNatural
   ! thus, you cannot pass in local_size, since it is needed later
   adjusted_size = local_size
-  call OutputConvertArrayToNatural(indices,array,adjusted_size,global_size,option)
+  call OutputConvertArrayToNatural(indices,array,adjusted_size, &
+                                   global_size,option)
   call WriteTecplotDataSet(OUTPUT_UNIT,realization_base,array,TECPLOT_REAL, &
                            adjusted_size)
   ! since the array has potentially been resized, must reallocate
@@ -836,18 +838,19 @@ subroutine OutputFluxVelocitiesTecplotBlk(realization_base,iphase, &
     do j=1,ny_local
       do i=1,nx_local
         count = count + 1
-        local_id = i+(j-1)*grid%structured_grid%nlx+ &
-                   (k-1)*grid%structured_grid%nlxy
+        local_id = i+(j-1)*structured_grid%nlx+ &
+                   (k-1)*structured_grid%nlxy
         ghosted_id = grid%nL2G(local_id)        
         array(count) = grid%y(ghosted_id)
         if (direction == Y_DIRECTION) &
           array(count) = array(count) + &
-                         0.5d0*grid%structured_grid%dy(ghosted_id)
+                         0.5d0*structured_grid%dy(ghosted_id)
       enddo
     enddo
   enddo
   adjusted_size = local_size
-  call OutputConvertArrayToNatural(indices,array,adjusted_size,global_size,option)
+  call OutputConvertArrayToNatural(indices,array,adjusted_size, &
+                                   global_size,option)
   call WriteTecplotDataSet(OUTPUT_UNIT,realization_base,array,TECPLOT_REAL, &
                            adjusted_size)
   deallocate(array)
@@ -860,67 +863,27 @@ subroutine OutputFluxVelocitiesTecplotBlk(realization_base,iphase, &
     do j=1,ny_local
       do i=1,nx_local
         count = count + 1
-        local_id = i+(j-1)*grid%structured_grid%nlx+ &
-                   (k-1)*grid%structured_grid%nlxy
+        local_id = i+(j-1)*structured_grid%nlx+ &
+                   (k-1)*structured_grid%nlxy
         ghosted_id = grid%nL2G(local_id)        
         array(count) = grid%z(ghosted_id)
         if (direction == Z_DIRECTION) &
           array(count) = array(count) + &
-                         0.5d0*grid%structured_grid%dz(ghosted_id)
+                         0.5d0*structured_grid%dz(ghosted_id)
       enddo
     enddo
   enddo
   adjusted_size = local_size
-  call OutputConvertArrayToNatural(indices,array,adjusted_size,global_size,option)
+  call OutputConvertArrayToNatural(indices,array,adjusted_size, &
+                                   global_size,option)
   call WriteTecplotDataSet(OUTPUT_UNIT,realization_base,array,TECPLOT_REAL, &
                            adjusted_size)
   deallocate(array)
   nullify(array)
 
-  call DiscretizationCreateVector(discretization,ONEDOF,global_vec,GLOBAL, &
-                                  option) 
-  call VecZeroEntries(global_vec,ierr);CHKERRQ(ierr)
-  call VecGetArrayF90(global_vec,vec_ptr,ierr);CHKERRQ(ierr)
-  
-  ! place interior velocities in a vector
-  connection_set_list => grid%internal_connection_set_list
-  cur_connection_set => connection_set_list%first
-  sum_connection = 0
-  do 
-    if (.not.associated(cur_connection_set)) exit
-    do iconn = 1, cur_connection_set%num_connections
-      sum_connection = sum_connection + 1
-      ghosted_id = cur_connection_set%id_up(iconn)
-      local_id = grid%nG2L(ghosted_id) ! = zero for ghost nodes
-      ! velocities are stored as the downwind face of the upwind cell
-      if (local_id <= 0 .or. &
-          dabs(cur_connection_set%dist(direction,iconn)) < 0.99d0) cycle
-      if (output_flux) then
-        ! iphase here is really teh dof
-        vec_ptr(local_id) = patch%internal_flow_fluxes(iphase,sum_connection)
-      else
-        vec_ptr(local_id) = patch%internal_velocities(iphase,sum_connection)
-      endif
-    enddo
-    cur_connection_set => cur_connection_set%next
-  enddo
-
-  ! write out data set 
-  count = 0 
-  allocate(array(local_size)) 
-  do k=1,nz_local 
-    do j=1,ny_local 
-      do i=1,nx_local 
-        count = count + 1 
-        local_id = i+(j-1)*grid%structured_grid%nlx+ &
-                   (k-1)*grid%structured_grid%nlxy 
-        array(count) = vec_ptr(local_id) 
-      enddo 
-    enddo 
-  enddo 
-  call VecRestoreArrayF90(global_vec,vec_ptr,ierr);CHKERRQ(ierr)
-   
-  call VecDestroy(global_vec,ierr);CHKERRQ(ierr)
+  allocate(array(local_size))
+  call OutputCollectVelocityOrFlux(realization_base, iphase, direction, &
+                                   output_flux, array)
 
 !GEH - Structured Grid Dependence - End
   
@@ -928,12 +891,11 @@ subroutine OutputFluxVelocitiesTecplotBlk(realization_base,iphase, &
   array(1:local_size) = array(1:local_size)*output_option%tconv 
   
   adjusted_size = local_size
-  call OutputConvertArrayToNatural(indices,array,adjusted_size,global_size,option)
+  call OutputConvertArrayToNatural(indices,array,adjusted_size, &
+                                   global_size,option)
   call WriteTecplotDataSet(OUTPUT_UNIT,realization_base,array,TECPLOT_REAL, &
                            adjusted_size)
   deallocate(array)
-  nullify(array)
-  
   deallocate(indices)
 
   if (option%myrank == option%io_rank) close(OUTPUT_UNIT)
@@ -1096,6 +1058,12 @@ subroutine OutputVelocitiesTecplotPoint(realization_base)
   option => realization_base%option
   output_option => realization_base%output_option
   discretization => realization_base%discretization
+
+  if (.not.associated(grid%structured_grid)) then
+    option%io_buffer = 'Tecplot Point output format only supported on &
+      &structured grids.'
+    call printErrMsg(option)
+  endif
   
   filename = OutputFilename(output_option,option,'tec','vel')
   
@@ -1117,7 +1085,7 @@ subroutine OutputVelocitiesTecplotPoint(realization_base)
              '"qlx [m/' // trim(output_option%tunit) // ']",' // &
              '"qly [m/' // trim(output_option%tunit) // ']",' // &
              '"qlz [m/' // trim(output_option%tunit) // ']"'
-    if (option%nphase > 1) then
+    if (option%nphase > 1 .or. option%transport%nphase > 1) then
       string = trim(string) // &
                ',"qgx [m/' // trim(output_option%tunit) // ']",' // &
                '"qgy [m/' // trim(output_option%tunit) // ']",' // &
@@ -1131,22 +1099,23 @@ subroutine OutputVelocitiesTecplotPoint(realization_base)
     write(string,'(''ZONE T= "'',1es13.5,''",'','' I='',i5,'', J='',i5, &
                  &'', K='',i5)') &
                  option%time/output_option%tconv, &
-                 grid%structured_grid%nx,grid%structured_grid%ny,grid%structured_grid%nz 
+                 grid%structured_grid%nx,grid%structured_grid%ny, &
+                 grid%structured_grid%nz 
     string = trim(string) // ', DATAPACKING=POINT'
     write(OUTPUT_UNIT,'(a)') trim(string)
 
   endif
   
-  ! currently supported for only liquid phase'
-  call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vlx,GLOBAL, &
-                                  option)  
-  call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vly,GLOBAL, &
-                                  option)  
-  call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vlz,GLOBAL, &
-                                  option)  
+  call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vlx, &
+                                  GLOBAL,option)  
+  call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vly, &
+                                  GLOBAL,option)  
+  call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vlz, &
+                                  GLOBAL,option)  
   
   call OutputGetCellCenteredVelocities(realization_base,global_vec_vlx, &
-                                       global_vec_vly,global_vec_vlz,LIQUID_PHASE)
+                                       global_vec_vly,global_vec_vlz, &
+                                       LIQUID_PHASE)
 
   call VecGetArrayF90(global_vec_vlx,vec_ptr_vlx,ierr);CHKERRQ(ierr)
   call VecGetArrayF90(global_vec_vly,vec_ptr_vly,ierr);CHKERRQ(ierr)
@@ -1157,16 +1126,17 @@ subroutine OutputVelocitiesTecplotPoint(realization_base)
 1001 format(i4,1x)
 1009 format('')
 
-  if (option%nphase > 1) then
-    call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vgx,GLOBAL, &
-                                  option)  
-    call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vgy,GLOBAL, &
-                                  option)  
-    call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vgz,GLOBAL, &
-                                  option)  
+  if (option%nphase > 1 .or. option%transport%nphase > 1) then
+    call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vgx, &
+                                    GLOBAL,option)  
+    call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vgy, &
+                                    GLOBAL,option)  
+    call DiscretizationCreateVector(discretization,ONEDOF,global_vec_vgz, &
+                                    GLOBAL,option)  
   
     call OutputGetCellCenteredVelocities(realization_base,global_vec_vgx, &
-                                         global_vec_vgy,global_vec_vgz,GAS_PHASE)
+                                         global_vec_vgy,global_vec_vgz, &
+                                         GAS_PHASE)
 
     call VecGetArrayF90(global_vec_vgx,vec_ptr_vgx,ierr);CHKERRQ(ierr)
     call VecGetArrayF90(global_vec_vgy,vec_ptr_vgy,ierr);CHKERRQ(ierr)
@@ -1174,7 +1144,8 @@ subroutine OutputVelocitiesTecplotPoint(realization_base)
   endif
 
   do local_id = 1, grid%nlmax
-    ghosted_id = grid%nL2G(local_id)  ! local and ghosted are same for non-parallel
+    ghosted_id = grid%nL2G(local_id)  
+    ! local and ghosted are same for non-parallel
     write(OUTPUT_UNIT,1000,advance='no') grid%x(ghosted_id)
     write(OUTPUT_UNIT,1000,advance='no') grid%y(ghosted_id)
     write(OUTPUT_UNIT,1000,advance='no') grid%z(ghosted_id)
@@ -1183,7 +1154,7 @@ subroutine OutputVelocitiesTecplotPoint(realization_base)
     write(OUTPUT_UNIT,1000,advance='no') vec_ptr_vly(ghosted_id)
     write(OUTPUT_UNIT,1000,advance='no') vec_ptr_vlz(ghosted_id)
 
-    if (option%nphase > 1) then
+    if (option%nphase > 1 .or. option%transport%nphase > 1) then
       write(OUTPUT_UNIT,1000,advance='no') vec_ptr_vgx(ghosted_id)
       write(OUTPUT_UNIT,1000,advance='no') vec_ptr_vgy(ghosted_id)
       write(OUTPUT_UNIT,1000,advance='no') vec_ptr_vgz(ghosted_id)
@@ -1205,7 +1176,7 @@ subroutine OutputVelocitiesTecplotPoint(realization_base)
   call VecDestroy(global_vec_vly,ierr);CHKERRQ(ierr)
   call VecDestroy(global_vec_vlz,ierr);CHKERRQ(ierr)
 
-  if (option%nphase > 1) then
+  if (option%nphase > 1 .or. option%transport%nphase > 1) then
     call VecRestoreArrayF90(global_vec_vgx,vec_ptr_vgx,ierr);CHKERRQ(ierr)
     call VecRestoreArrayF90(global_vec_vgy,vec_ptr_vgy,ierr);CHKERRQ(ierr)
     call VecRestoreArrayF90(global_vec_vgz,vec_ptr_vgz,ierr);CHKERRQ(ierr)
@@ -1446,145 +1417,6 @@ subroutine WriteTecplotStructuredGrid(fid,realization_base)
                         ierr);CHKERRQ(ierr)
                             
 end subroutine WriteTecplotStructuredGrid
-
-! ************************************************************************** !
-
-subroutine WriteTecplotStructuredGridMPI(mpi_output_file,mpi_output_offset,realization_base)
-  ! 
-  ! Writes structured grid face coordinates
-! 
-  ! Author: Glenn Hammond
-  ! Date: 02/26/08
-  ! 
-
-  use Realization_Base_class, only : realization_base_type
-  use Grid_module
-  use Option_module
-  use Patch_module
-
-  implicit none
-  
-  integer mpi_output_file
-  integer(kind=MPI_OFFSET_KIND) mpi_output_offset, mpi_my_offset, size_per_line
-
-  class(realization_base_type) :: realization_base
-  
-  type(grid_type), pointer :: grid
-  type(option_type), pointer :: option
-  type(patch_type), pointer :: patch  
-  PetscInt :: i, j, k, count, nx, ny, nz
-  PetscReal :: temp_real
-  PetscErrorCode :: ierr  
-
-  PetscReal, allocatable :: temp_array(:)
-  
-  integer myGroup, myrankInGroup, sizeGroup
-  integer startLine, endLine, curLine, linesPerGroup, mpi_err
-  
-  character(len=:), allocatable :: mpi_output
-  integer len_output
-
-1000 format(es13.6,1x)
-  
-  call PetscLogEventBegin(logging%event_output_str_grid_tecplot, &
-                          ierr);CHKERRQ(ierr)
-                              
-  patch => realization_base%patch
-  grid => patch%grid
-  option => realization_base%option
-  
-  nx = grid%structured_grid%nx
-  ny = grid%structured_grid%ny
-  nz = grid%structured_grid%nz
-
-  myGroup = option%myrank * 3 / option%mycommsize
-  myrankInGroup = option%myrank - (myGroup * option%mycommsize + 2) / 3 
-  sizeGroup = ((myGroup+1) * option%mycommsize + 2) / 3 &
-                - (myGroup * option%mycommsize + 2) / 3
- 
-  linesPerGroup = (ny+1)*(nz+1)
-
-  startLine = linesPerGroup * myrankInGroup / sizeGroup
-  endLine = linesPerGroup * (myrankInGroup+1) / sizeGroup
-
-  size_per_line = 14 * (nx+1) + 1
-  mpi_my_offset = mpi_output_offset + myGroup * size_per_line * linesPerGroup &
-                       + startLine * size_per_line
-  
-  allocate(character(len=(endLine-startLine)*size_per_line) :: mpi_output)
-  len_output = 1
-  
-  ! x-dir
-  if (myGroup == 0) then
-    allocate(temp_array(nx+1))
-    temp_array(1) = realization_base%discretization%origin_global(X_DIRECTION)   
-    do i = 1,nx
-      temp_array(i+1) = temp_array(i) + grid%structured_grid%dx_global(i)
-    enddo
-
-    do curLine = startLine, endLine-1 
-      do i=1,nx+1
-        write(mpi_output(len_output:),1000) temp_array(i)
-        len_output = len_output + 14
-      enddo
-      
-      mpi_output(len_output:len_output) = NEW_LINE('A')
-      len_output = len_output + 1
-    enddo
-
-    deallocate(temp_array)
-  ! y-dir
-  else if (myGroup == 1) then
-    allocate(temp_array(ny+1))
-    temp_array(1) = realization_base%discretization%origin_global(Y_DIRECTION)   
-    do j = 1,ny
-      temp_array(j+1) = temp_array(j) + grid%structured_grid%dy_global(j)
-    enddo
-
-    do curLine = startLine, endLine-1
-      j = mod(curLine, ny+1) + 1
-      do i=1,nx+1
-        write(mpi_output(len_output:),1000) temp_array(j)
-        len_output = len_output + 14
-      enddo
-      
-      mpi_output(len_output:len_output) = NEW_LINE('A')
-      len_output = len_output + 1
-    enddo
-
-    deallocate(temp_array)
-  ! z-dir
-  else 
-    allocate(temp_array(nz+1))
-    temp_array(1) = realization_base%discretization%origin_global(Z_DIRECTION)   
-    do k = 1,nz
-      temp_array(k+1) = temp_array(k) + grid%structured_grid%dz_global(k)
-    enddo
-
-    do curLine = startLine, endLine-1
-      k = curLine / (ny+1) + 1
-      do i=1,nx+1
-        write(mpi_output(len_output:),1000) temp_array(k)
-        len_output = len_output + 14
-      enddo
-      
-      mpi_output(len_output:len_output) = NEW_LINE('A')
-      len_output = len_output + 1
-    enddo
-
-    deallocate(temp_array)
-  endif
-
-  call MPI_File_write_at(mpi_output_file, mpi_my_offset, &
-                           mpi_output, len_output - 1, MPI_CHARACTER, &
-                           MPI_STATUS_IGNORE, mpi_err) 
-  mpi_output_offset = mpi_output_offset + 3 * size_per_line * linesPerGroup 
-  deallocate(mpi_output)
-
-  call PetscLogEventEnd(logging%event_output_str_grid_tecplot, &
-                        ierr);CHKERRQ(ierr)
-                            
-end subroutine WriteTecplotStructuredGridMPI
 
 ! ************************************************************************** !
 
@@ -2313,215 +2145,6 @@ end subroutine WriteTecplotDataSetNumPerLine
 
 ! ************************************************************************** !
 
-subroutine WriteTecplotDataSetFromVecMPI(mpi_output_file, mpi_output_offset,realization_base,vec,datatype)
-  ! 
-  ! Writes data from a Petsc Vec within a block
-  ! of a Tecplot file
-  ! 
-  ! Author: Glenn Hammond
-  ! Date: 10/25/07
-  ! 
-
-  use Realization_Base_class, only : realization_base_type
-  
-  implicit none
-
-  integer mpi_output_file
-  integer(kind=MPI_OFFSET_KIND) mpi_output_offset
-
-  class(realization_base_type) :: realization_base
-  Vec :: vec
-  PetscInt :: datatype
-  PetscErrorCode :: ierr  
-  
-  PetscReal, pointer :: vec_ptr(:)
-  
-  call VecGetArrayF90(vec,vec_ptr,ierr);CHKERRQ(ierr)
-  call WriteTecplotDataSetMPI(mpi_output_file,mpi_output_offset,realization_base,vec_ptr,datatype,ZERO_INTEGER) 
-  call VecRestoreArrayF90(vec,vec_ptr,ierr);CHKERRQ(ierr)
-  
-end subroutine WriteTecplotDataSetFromVecMPI
-
-
-! ************************************************************************** !
-
-subroutine WriteTecplotDataSetMPI(mpi_output_file, mpi_output_offset,realization_base,array,datatype,size_flag)
-  ! 
-  ! Writes data from an array within a block
-  ! of a Tecplot file
-  ! 
-  ! Author: Glenn Hammond
-  ! Date: 10/25/07
-  ! 
-
-  use Realization_Base_class, only : realization_base_type
-  use Grid_module
-  use Option_module
-  use Patch_module
-
-  implicit none
-
-  integer mpi_output_file
-  integer(kind=MPI_OFFSET_KIND) mpi_output_offset
-
-  class(realization_base_type) :: realization_base
-  PetscReal :: array(:)
-  PetscInt :: datatype
-  PetscInt :: size_flag ! if size_flag /= 0, use size_flag as the local size
-
-  PetscInt, parameter :: num_per_line = 10
-
-  call WriteTecplotDataSetNumPerLineMPI(mpi_output_file, mpi_output_offset, &
-                                     realization_base,array,datatype, &
-                                     size_flag,num_per_line) 
-end subroutine WriteTecplotDataSetMPI
-
-! ************************************************************************** !
-
-subroutine WriteTecplotDataSetNumPerLineMPI(mpi_output_file,mpi_output_offset, &
-                                      realization_base,array,datatype, &
-                                      size_flag,num_per_line)
-  ! 
-  ! Writes data from an array within a block
-  ! of a Tecplot file with a specified number
-  ! of values per line
-  ! 
-  ! Author: Glenn Hammond
-  ! Date: 10/25/07, 12/02/11
-  ! 
-
-  use Realization_Base_class, only : realization_base_type
-  use Grid_module
-  use Option_module
-  use Patch_module
-
-  implicit none
-  
-  integer mpi_output_file
-  integer(kind=MPI_OFFSET_KIND) mpi_output_offset, mpi_my_offset
-
-  class(realization_base_type) :: realization_base
-  PetscReal :: array(:)
-  PetscInt :: datatype
-  PetscInt :: size_flag ! if size_flag /= 0, use size_flag as the local size
-  PetscInt :: num_per_line
-  
-  type(grid_type), pointer :: grid
-  type(option_type), pointer :: option
-  type(patch_type), pointer :: patch  
-  PetscInt :: i
-  PetscInt :: max_proc, max_proc_prefetch
-  PetscMPIInt :: iproc_mpi, recv_size_mpi
-  PetscInt :: max_local_size
-  PetscMPIInt :: local_size_mpi
-  PetscInt :: istart, iend, num_in_array
-  PetscMPIInt :: status_mpi(MPI_STATUS_SIZE)
-  PetscInt, allocatable :: integer_data(:), integer_data_recv(:)
-  PetscReal, allocatable :: real_data(:), real_data_recv(:)
-  PetscErrorCode :: ierr  
- 
-  character(len=:), allocatable :: mpi_output
-  integer mpi_my_size, mpi_prev_size, mpi_total_size, mpi_err
- 
-  patch => realization_base%patch
-  grid => patch%grid
-  option => realization_base%option
-
-  call PetscLogEventBegin(logging%event_output_write_tecplot, &
-                          ierr);CHKERRQ(ierr)
-
-  ! if num_per_line exceeds 100, need to change the format statement below
-  if (num_per_line > 100) then
-    option%io_buffer = 'Number of values to be written to line in ' // &
-      'WriteTecplotDataSetNumPerLineMPI() exceeds 100.  ' // &
-      'Must fix format statements.'
-    call printErrMsg(option)
-  endif
-
-  if (size_flag /= 0) then
-    call MPI_Allreduce(size_flag,max_local_size,ONE_INTEGER_MPI,MPIU_INTEGER, &
-                       MPI_MAX,option%mycomm,ierr)
-    local_size_mpi = size_flag
-  else 
-  ! if first time, determine the maximum size of any local array across 
-  ! all procs
-    if (max_local_size_saved < 0) then
-      call MPI_Allreduce(grid%nlmax,max_local_size,ONE_INTEGER_MPI, &
-                         MPIU_INTEGER,MPI_MAX,option%mycomm,ierr)
-      max_local_size_saved = max_local_size
-      write(option%io_buffer,'("max_local_size_saved: ",i9)') max_local_size
-      call printMsg(option)
-    endif
-    max_local_size = max_local_size_saved
-    local_size_mpi = grid%nlmax
-  endif
- 
-  ! output the data to a string
-  !allocate(mpi_output(local_size_mpi * 14 + 100))
-  allocate(character(len=local_size_mpi*14+1) :: mpi_output)
-  mpi_my_size = 1
- 
-1000 format(i2,1x)
-1001 format(i4,1x)
-1002 format(i6,1x)
-1003 format(i8,1x)
-1004 format(i10,1x)
-1010 format(es13.6,1x)
-
-  if (datatype == TECPLOT_INTEGER) then
-    do istart=1,local_size_mpi
-        i = int(array(istart))
-        if (i < 10) then
-          write(mpi_output(mpi_my_size: ), 1000) i
-          mpi_my_size = mpi_my_size + 3
-        else if (i < 1000) then
-          write(mpi_output(mpi_my_size: ), 1001) i
-          mpi_my_size = mpi_my_size + 5
-        else if (i < 100000) then
-          write(mpi_output(mpi_my_size: ), 1002) i
-          mpi_my_size = mpi_my_size + 7
-        else if (i < 10000000) then
-          write(mpi_output(mpi_my_size: ), 1003) i
-          mpi_my_size = mpi_my_size + 9
-        else
-          write(mpi_output(mpi_my_size: ), 1004) i
-          mpi_my_size = mpi_my_size + 11
-        endif
- 
-    enddo
-  else
-    do istart=1,local_size_mpi
-        write(mpi_output(mpi_my_size: ), 1010) array(istart)
-        mpi_my_size = mpi_my_size + 14
-    enddo
-  endif
-
-  ! append \n to end of this proc's output
-  mpi_output(mpi_my_size:mpi_my_size) = NEW_LINE('A') 
-
-      
-  call MPI_Scan(mpi_my_size,mpi_prev_size,ONE_INTEGER_MPI, &
-                         MPIU_INTEGER,MPI_SUM,MPI_COMM_WORLD, mpi_err)
-  mpi_prev_size = mpi_prev_size - mpi_my_size
-
-  call MPI_Allreduce(mpi_my_size,mpi_total_size,ONE_INTEGER_MPI, &
-                         MPIU_INTEGER,MPI_SUM,MPI_COMM_WORLD, mpi_err)
-  
-  mpi_my_offset = mpi_output_offset + mpi_prev_size 
-  call MPI_File_write_at(mpi_output_file, mpi_my_offset, &
-                           mpi_output, mpi_my_size, MPI_CHARACTER, &
-                           MPI_STATUS_IGNORE, mpi_err) 
- 
-  mpi_output_offset = mpi_output_offset + mpi_total_size
-     
-  deallocate(mpi_output)
-
-  call PetscLogEventEnd(logging%event_output_write_tecplot,ierr);CHKERRQ(ierr)
-
-end subroutine WriteTecplotDataSetNumPerLineMPI
-
-! ************************************************************************** !
-
 subroutine OutputPrintExplicitFlowrates(realization_base)
   ! 
   ! Prints out the flow rate through a voronoi face
@@ -2718,9 +2341,9 @@ subroutine OutputSecondaryContinuumTecplot(realization_base)
   ! Here we are assuming that if there are secondary continua for both
   ! heat and reactive transport, then the shape and type of secondary
   ! continua are the same - SK
-  if (associated(sec_heat_vars)) then
+  if (associated(patch%aux%SC_heat)) then
     dist => sec_heat_vars(1)%sec_continuum%distance
-  elseif (associated(rt_sec_tranport_vars)) then
+  elseif (associated(patch%aux%SC_RT)) then
     dist => rt_sec_tranport_vars(1)%sec_continuum%distance
   endif
 
@@ -2813,7 +2436,8 @@ subroutine OutputSecondaryContinuumTecplot(realization_base)
               do naqcomp = 1, reaction%naqcomp
                 write(OUTPUT_UNIT,1000,advance='no') &
                 RealizGetVariableValueAtCell(realization_base,ghosted_id, &
-                                             SECONDARY_CONCENTRATION,sec_id)
+                                             SECONDARY_CONCENTRATION,sec_id, &
+                                             naqcomp)
                enddo
             endif
           endif
