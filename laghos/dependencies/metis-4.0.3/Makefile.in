@@ -3,7 +3,7 @@
 CC = cc
 
 # What optimization level to use
-OPTFLAGS = -O2 
+OPTFLAGS = -O2 -g
 
 # What options to be used by the compiler
 COPTIONS = 
