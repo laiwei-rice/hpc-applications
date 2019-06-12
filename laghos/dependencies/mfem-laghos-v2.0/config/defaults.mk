@@ -18,10 +18,10 @@
 # Some choices below are based on the OS type:
 NOTMAC := $(subst Darwin,,$(shell uname -s))
 
-CXX = g++
-MPICXX = mpicxx
+CXX = CC -dynamic
+MPICXX = CC -dynamic
 
-OPTIM_FLAGS = -O3
+OPTIM_FLAGS = -g -O3
 DEBUG_FLAGS = -g -Wall
 
 # Destination location of make install
